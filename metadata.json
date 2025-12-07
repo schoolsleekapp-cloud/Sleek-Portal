@@ -1,0 +1,7 @@
+{
+  "name": "Sleek School Portal",
+  "description": "A comprehensive school management system featuring student CBT exams, real-time results, attendance tracking, and role-based access for students, teachers, and admins.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
