@@ -22,9 +22,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Initialize Firestore with settings to improve connectivity and data handling
-// Force long polling to avoid WebSocket timeouts
+// Initialize Firestore with default settings to allow auto-detection of best connection method (WebSockets vs Long Polling)
 export const db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true,
 });

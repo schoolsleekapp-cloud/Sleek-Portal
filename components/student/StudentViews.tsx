@@ -134,10 +134,14 @@ export const StudentCBT: React.FC<Props> = ({ user, showNotification }) => {
     // Fetch History
     useEffect(() => {
         const fetchHistory = async () => {
-            const q = query(collection(db, 'exam_submissions'), where('studentId', '==', user.uniqueId), orderBy('timestamp', 'desc'), limit(20));
+            // Remove orderBy to prevent index errors. Sort client-side.
+            const q = query(collection(db, 'exam_submissions'), where('studentId', '==', user.uniqueId));
             try {
                 const snap = await getDocs(q);
-                setHistory(snap.docs.map(d => ({id: d.id, ...d.data()} as ExamSubmission)));
+                const data = snap.docs.map(d => ({id: d.id, ...d.data()} as ExamSubmission));
+                // Sort descending by timestamp
+                data.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                setHistory(data.slice(0, 20)); // Limit client-side
             } catch (e) {
                 console.error(e);
             }

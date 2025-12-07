@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap } from 'lucide-react';
+import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap, MessageCircle } from 'lucide-react';
 import { collection, query, where, onSnapshot, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
 import { UserProfile, SchoolInfo, AttendanceRecord, Exam, Result } from '../../types';
@@ -20,6 +20,16 @@ interface Props {
     setView?: (v: string) => void;
     showNotification?: (msg: string, type: 'info' | 'success' | 'error') => void;
 }
+
+const sendWhatsapp = (phone: string | null | undefined, text: string) => {
+    if (!phone) {
+        alert("No parent phone number linked to this student.");
+        return;
+    }
+    const number = phone.replace(/[^0-9]/g, '');
+    const url = `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+};
 
 export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInfo }) => {
     if (view === 'home' && setView) {
@@ -64,25 +74,6 @@ export const AdminResults: React.FC<Props> = ({ user, showNotification }) => {
                     Use the "View My History" button (which in Admin mode shows ALL results) to select a result to modify.
                 </p>
             </div>
-            {/* We reuse the robust TeacherGrading component because it already has all the logic. 
-                However, for Admin, we might want to ensure 'History' shows ALL results, not just 'creatorId'.
-                Since TeacherGrading uses `where('creatorId', '==', user.uniqueId)`, we might need to patch it or accept a prop.
-                For now, we will render it as is, but in a real app we'd pass a prop `isAdmin={true}` to modify the query.
-                To keep it simple for this change, let's assume Admin also wants to generate results, 
-                but to Modify existing ones, we really need to query ALL results.
-                
-                Let's patch TeacherGrading slightly? No, let's just create a wrapper or
-                instruct the user to look up the result.
-                
-                Actually, the cleanest way is to just render TeacherGrading. 
-                If we want Admin to see ALL results in history, we need to modify TeacherGrading to accept a filter prop.
-                Let's Modify TeacherGrading in the previous file to be smarter about queries?
-                The prompt asks for "Admin Dashboard provided the result matched the school ID".
-                
-                Workaround: Since I can't easily modify TeacherGrading's internal query without changing its signature significantly in the other file block,
-                I will create a specific Admin Result List here that allows selecting a result, 
-                then passes that data into a fresh instance of the Editor.
-            */}
              <TeacherGrading user={user} showNotification={showNotification} />
         </div>
     );
@@ -397,13 +388,14 @@ export const AdminAttendance: React.FC<Props> = ({ user }) => {
                             <th className="p-4 font-medium">Date & Time</th>
                             <th className="p-4 font-medium">Guardian</th>
                             <th className="p-4 font-medium">Recorded By</th>
+                            <th className="p-4 font-medium">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
-                            <tr><td colSpan={5} className="p-8 text-center">Loading records...</td></tr>
+                            <tr><td colSpan={6} className="p-8 text-center">Loading records...</td></tr>
                         ) : filteredRecords.length === 0 ? (
-                            <tr><td colSpan={5} className="p-8 text-center text-gray-400">No attendance records found.</td></tr>
+                            <tr><td colSpan={6} className="p-8 text-center text-gray-400">No attendance records found.</td></tr>
                         ) : (
                             filteredRecords.map(rec => (
                                 <tr key={rec.id} className="hover:bg-gray-50">
@@ -427,6 +419,17 @@ export const AdminAttendance: React.FC<Props> = ({ user }) => {
                                     </td>
                                     <td className="p-4 text-gray-600">
                                         {rec.recordedByName || 'Teacher'}
+                                    </td>
+                                    <td className="p-4">
+                                        {rec.guardianPhone && (
+                                            <button 
+                                                onClick={() => sendWhatsapp(rec.guardianPhone, `Attendance Alert: ${rec.studentName} marked ${rec.type.toUpperCase()} at ${rec.timestamp?.toDate().toLocaleTimeString()}`)}
+                                                className="text-green-600 hover:bg-green-50 p-2 rounded-full"
+                                                title="Resend WhatsApp Notification"
+                                            >
+                                                <MessageCircle size={18}/>
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))
@@ -498,7 +501,18 @@ export const AdminUsers: React.FC<Props> = ({ user }) => {
                                 </td>
                                 <td className="p-4"><Badge color={u.role === 'teacher' ? 'purple' : 'blue'}>{u.role}</Badge></td>
                                 <td className="p-4 text-sm font-mono text-gray-500">{u.uniqueId}</td>
-                                <td className="p-4 text-sm text-gray-500">{u.email || u.parentPhone}</td>
+                                <td className="p-4 text-sm text-gray-500 flex items-center gap-3">
+                                    <span>{u.email || u.parentPhone}</span>
+                                    {u.parentPhone && (
+                                        <button 
+                                            onClick={() => sendWhatsapp(u.parentPhone!, u.fullName)} 
+                                            className="text-green-600 hover:text-green-700 bg-green-50 p-1.5 rounded-full transition-colors" 
+                                            title="Chat on WhatsApp"
+                                        >
+                                            <MessageCircle size={18} />
+                                        </button>
+                                    )}
+                                </td>
                             </tr>
                         ))}
                     </tbody>

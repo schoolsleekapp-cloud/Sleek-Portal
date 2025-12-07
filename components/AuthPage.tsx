@@ -212,13 +212,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
     try {
         if (mode === 'signup') {
             let uid = auth.currentUser?.uid || "user-" + Date.now().toString(36);
-            let finalSchoolId = formData.schoolId;
+            let finalSchoolId = formData.schoolId.trim();
             let generatedUniqueId = "";
             let codeDocRef = null;
 
             if (role === 'admin') {
                 const codesRef = collection(db, 'access_codes');
-                const q = query(codesRef, where('code', '==', formData.accessCode));
+                const q = query(codesRef, where('code', '==', formData.accessCode.trim()));
                 const querySnapshot = await getDocs(q);
                 
                 if (querySnapshot.empty) {
@@ -232,7 +232,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
             }
 
             if (role === 'superadmin') {
-                const userCredential = await createUserWithEmailAndPassword(auth, formData.loginId, formData.password);
+                const userCredential = await createUserWithEmailAndPassword(auth, formData.loginId.trim(), formData.password);
                 uid = userCredential.user.uid;
             } else {
                 uid = auth.currentUser?.uid || uid;
@@ -279,7 +279,8 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
             const newProfileData: Omit<UserProfile, 'id'> = {
                 uid: uid,
                 fullName: formData.fullName,
-                email: role === 'student' ? `${formData.parentPhone}@temp-parent.com` : formData.loginId,
+                // Normalize email to lowercase
+                email: role === 'student' ? `${formData.parentPhone}@temp-parent.com` : formData.loginId.trim().toLowerCase(),
                 parentPhone: role === 'student' ? formData.parentPhone : null,
                 role: role as any,
                 schoolId: finalSchoolId,
@@ -296,7 +297,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
             
         } else {
             if (role === 'superadmin') {
-                const userCredential = await signInWithEmailAndPassword(auth, formData.loginId, formData.password);
+                const userCredential = await signInWithEmailAndPassword(auth, formData.loginId.trim(), formData.password);
                 const profile: UserProfile = {
                     id: 'super-admin-session',
                     uid: userCredential.user.uid,
@@ -318,11 +319,13 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
             if (!idToSearch) throw new Error("Please enter your ID or scan the QR code.");
 
             const usersRef = collection(db, 'users');
+            // Check for ID match (uppercase)
             let q = query(usersRef, where('uniqueId', '==', idToSearch.toUpperCase()), where('role', '==', role));
             let querySnapshot = await getDocs(q);
 
+            // If ID match fails, check for email match (lowercase)
             if (querySnapshot.empty && role !== 'student') {
-                const qEmail = query(usersRef, where('email', '==', idToSearch), where('role', '==', role));
+                const qEmail = query(usersRef, where('email', '==', idToSearch.toLowerCase()), where('role', '==', role));
                 querySnapshot = await getDocs(qEmail);
             }
 
