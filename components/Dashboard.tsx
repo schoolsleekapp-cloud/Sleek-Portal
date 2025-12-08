@@ -10,7 +10,7 @@ import { UserProfile, SchoolInfo } from '../types';
 import { UserIDCard } from './UserIDCard';
 import { StudentDashboard, StudentCBT, StudentResults, StudentAttendance, StudentFees, StudentLessonNotes } from './student/StudentViews';
 import { TeacherDashboard, TeacherExams, TeacherAttendance, TeacherGrading, TeacherLessonNotes, TeacherCBTResults } from './teacher/TeacherViews';
-import { AdminDashboard, AdminUsers, AdminAttendance, AdminExams, AdminResults } from './admin/AdminViews';
+import { AdminDashboard, AdminUsers, AdminAttendance, AdminExams, AdminResults, AdminFees } from './admin/AdminViews';
 import { SuperAdminDashboard } from './superadmin/SuperAdminViews';
 
 interface DashboardProps {
@@ -83,7 +83,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, showNotifi
                 if (currentUser.role === 'teacher') return <TeacherAttendance user={currentUser} showNotification={showNotification} />;
                 if (currentUser.role === 'admin') return <AdminAttendance user={currentUser} showNotification={showNotification} />;
                 return null;
-            case 'fees': return <StudentFees user={currentUser} />;
+            case 'fees': 
+                if (currentUser.role === 'admin') return <AdminFees user={currentUser} showNotification={showNotification} />;
+                return <StudentFees user={currentUser} showNotification={showNotification} />;
             case 'exams': 
                 if (currentUser.role === 'admin') return <AdminExams user={currentUser} showNotification={showNotification} />;
                 return <TeacherExams user={currentUser} showNotification={showNotification} />;
@@ -197,6 +199,7 @@ const NavLinks = ({ role, current, setView }: { role: string, current: string, s
         admin: [
             { id: 'exams', icon: FileText, label: 'Exam Management' },
             { id: 'admin_results', icon: GraduationCap, label: 'Results Management' },
+            { id: 'fees', icon: CreditCard, label: 'Fee Payments' },
             { id: 'attendance', icon: Calendar, label: 'Attendance Logs' },
             { id: 'users', icon: Users, label: 'Directory' },
             { id: 'settings', icon: Edit, label: 'Settings' },

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap, MessageCircle } from 'lucide-react';
+import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap, MessageCircle, CreditCard, X } from 'lucide-react';
 import { collection, query, where, onSnapshot, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { UserProfile, SchoolInfo, AttendanceRecord, Exam, Result } from '../../types';
+import { UserProfile, SchoolInfo, AttendanceRecord, Exam, Result, FeePayment } from '../../types';
 import { Card } from '../Card';
 import { StatCard } from '../StatCard';
 import { Badge } from '../Badge';
@@ -54,7 +54,7 @@ export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInf
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <StatCard icon={Users} label="User Management" value="Directory" color="blue" onClick={() => setView('users')} />
-                    <StatCard icon={FileText} label="Exam Management" value="Teacher Exams" color="orange" onClick={() => setView('exams')} />
+                    <StatCard icon={CreditCard} label="Fee Payments" value="Review" color="emerald" onClick={() => setView('fees')} />
                     <StatCard icon={GraduationCap} label="Results Management" value="Student Results" color="green" onClick={() => setView('admin_results')} />
                     <StatCard icon={Calendar} label="Attendance Logs" value="View All" color="purple" onClick={() => setView('attendance')} />
                 </div>
@@ -62,6 +62,130 @@ export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInf
         );
     }
     return null;
+};
+
+export const AdminFees: React.FC<Props> = ({ user, showNotification }) => {
+    const [payments, setPayments] = useState<FeePayment[]>([]);
+    const [filterStatus, setFilterStatus] = useState('pending');
+    const [selectedPayment, setSelectedPayment] = useState<FeePayment | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const q = query(
+            collection(db, 'fee_payments'), 
+            where('schoolId', '==', user.schoolId)
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            const data = snap.docs.map(d => ({id: d.id, ...d.data()} as FeePayment));
+            data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            setPayments(data);
+        });
+        return () => unsub();
+    }, [user.schoolId]);
+
+    const handleAction = async (status: 'approved' | 'rejected') => {
+        if (!selectedPayment?.id) return;
+        setLoading(true);
+        try {
+            await updateDoc(doc(db, 'fee_payments', selectedPayment.id), { status });
+            showNotification?.(`Payment ${status}`, 'success');
+            setSelectedPayment(null);
+        } catch (e: any) {
+            showNotification?.('Error updating status', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const filtered = payments.filter(p => filterStatus === 'all' ? true : p.status === filterStatus);
+
+    return (
+        <Card>
+            {selectedPayment && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl max-w-lg w-full overflow-hidden">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                            <h3 className="font-bold">Review Payment</h3>
+                            <button onClick={() => setSelectedPayment(null)}><X size={20}/></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-xs text-gray-500 uppercase font-bold">Student</p>
+                                    <p className="font-bold text-lg">{selectedPayment.studentName}</p>
+                                    <p className="text-sm text-gray-500">{selectedPayment.studentId}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs text-gray-500 uppercase font-bold">Amount</p>
+                                    <p className="font-bold text-xl text-green-600">{selectedPayment.amount}</p>
+                                    <p className="text-xs text-gray-500">{selectedPayment.paymentType}</p>
+                                </div>
+                            </div>
+                            
+                            <div className="border rounded-lg p-2 bg-gray-50">
+                                <p className="text-xs text-gray-500 mb-2 text-center">Receipt Evidence</p>
+                                <img src={selectedPayment.receiptBase64} alt="Receipt" className="w-full h-64 object-contain" />
+                            </div>
+
+                            <div className="flex gap-4 pt-2">
+                                <Button onClick={() => handleAction('rejected')} variant="danger" className="flex-1" disabled={loading}>Reject</Button>
+                                <Button onClick={() => handleAction('approved')} variant="success" className="flex-1" disabled={loading}>Approve Payment</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-800">Fee Payment Requests</h2>
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                    {['all', 'pending', 'approved', 'rejected'].map(s => (
+                        <button 
+                            key={s}
+                            onClick={() => setFilterStatus(s)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-all ${filterStatus === s ? 'bg-white shadow text-indigo-600' : 'text-gray-500'}`}
+                        >
+                            {s}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-gray-600 border-b">
+                        <tr>
+                            <th className="p-4">Student</th>
+                            <th className="p-4">Type</th>
+                            <th className="p-4">Amount</th>
+                            <th className="p-4">Date</th>
+                            <th className="p-4">Status</th>
+                            <th className="p-4">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {filtered.map(p => (
+                            <tr key={p.id} className="hover:bg-gray-50">
+                                <td className="p-4 font-medium">{p.studentName}</td>
+                                <td className="p-4 text-gray-600">{p.paymentType}</td>
+                                <td className="p-4 font-bold text-gray-800">{p.amount}</td>
+                                <td className="p-4 text-gray-500">{p.createdAt?.toDate?.().toLocaleDateString()}</td>
+                                <td className="p-4">
+                                    <Badge color={p.status === 'approved' ? 'green' : p.status === 'rejected' ? 'red' : 'yellow'}>
+                                        {p.status.toUpperCase()}
+                                    </Badge>
+                                </td>
+                                <td className="p-4">
+                                    <Button variant="secondary" className="px-3 py-1 text-xs" onClick={() => setSelectedPayment(p)}>Review</Button>
+                                </td>
+                            </tr>
+                        ))}
+                        {filtered.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">No payments found.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    );
 };
 
 // Reuse TeacherGrading logic but exposed to Admin to edit any result

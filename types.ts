@@ -165,6 +165,21 @@ export interface AttendanceRecord {
   guardianPhoto?: string;
 }
 
+export interface FeePayment {
+  id?: string;
+  studentId: string;
+  studentName: string;
+  schoolId: string;
+  amount: string;
+  paymentType: string; // Tuition, Uniform, etc.
+  term: string;
+  session: string;
+  status: 'pending' | 'approved' | 'rejected';
+  receiptBase64?: string;
+  createdAt: FirestoreTimestamp | any;
+  adminNote?: string;
+}
+
 export interface NotificationState {
   message: string;
   type: 'info' | 'success' | 'error';

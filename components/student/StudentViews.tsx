@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, GraduationCap, Calendar, CreditCard, CheckCircle, Lock, User, Clock, AlertCircle, BookOpen, Search, ArrowLeft, Unlock, Loader, PlayCircle, History, List } from 'lucide-react';
+import { FileText, GraduationCap, Calendar, CreditCard, CheckCircle, Lock, User, Clock, AlertCircle, BookOpen, Search, ArrowLeft, Unlock, Loader, PlayCircle, History, List, Plus, X, Upload } from 'lucide-react';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, getDoc, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { UserProfile, Exam, AttendanceRecord, Result, LessonNote, ResultToken, SchoolInfo, ExamSubmission } from '../../types';
+import { UserProfile, Exam, AttendanceRecord, Result, LessonNote, ResultToken, SchoolInfo, ExamSubmission, FeePayment } from '../../types';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { StatCard } from '../StatCard';
 import { Badge } from '../Badge';
+import { Input } from '../Input';
 import { ResultPreviewModal } from '../teacher/TeacherViews';
 
 interface Props {
@@ -697,30 +698,182 @@ export const StudentAttendance: React.FC<Props> = ({ user }) => {
     );
 };
 
-export const StudentFees: React.FC<Props> = ({ user }) => (
-    <Card>
-        <h2 className="text-xl font-bold mb-6">Fee Payment History (for {user.uniqueId})</h2>
-        <div className="space-y-4">
-            <div className="flex justify-between items-center p-3 border-b border-gray-100 pb-4">
-                <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-full"><CheckCircle className="text-green-600 w-4 h-4"/></div>
-                    <div>
-                        <p className="font-bold text-gray-800">Tuition Fee - 1st Term</p>
-                        <p className="text-xs text-gray-500">Dec 1, 2024</p>
-                    </div>
+export const StudentFees: React.FC<Props> = ({ user, showNotification }) => {
+    const [payments, setPayments] = useState<FeePayment[]>([]);
+    const [showUpload, setShowUpload] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState({
+        amount: '',
+        type: 'Tuition Fee',
+        term: '1st Term',
+        session: '2024/2025',
+        receiptBase64: ''
+    });
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        const fetchPayments = async () => {
+            try {
+                const q = query(
+                    collection(db, 'fee_payments'), 
+                    where('studentId', '==', user.uniqueId),
+                );
+                const snap = await getDocs(q);
+                const data = snap.docs.map(d => ({id: d.id, ...d.data()} as FeePayment));
+                // Sort client side
+                data.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                setPayments(data);
+            } catch (e) {
+                console.error("Error fetching fees", e);
+            }
+        };
+        fetchPayments();
+    }, [user.uniqueId, loading]);
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        if (file.size > 800000) { // 800KB limit
+            showNotification?.('File size too large. Max 800KB', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setFormData(prev => ({ ...prev, receiptBase64: event.target?.result as string }));
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSubmit = async () => {
+        if (!formData.amount || !formData.receiptBase64) {
+            showNotification?.('Amount and Receipt are required', 'error');
+            return;
+        }
+        setLoading(true);
+        try {
+            await addDoc(collection(db, 'fee_payments'), {
+                studentId: user.uniqueId,
+                studentName: user.fullName,
+                schoolId: user.schoolId,
+                amount: formData.amount,
+                paymentType: formData.type,
+                term: formData.term,
+                session: formData.session,
+                receiptBase64: formData.receiptBase64,
+                status: 'pending',
+                createdAt: serverTimestamp()
+            });
+            showNotification?.('Payment record submitted for approval', 'success');
+            setShowUpload(false);
+            setFormData({ ...formData, amount: '', receiptBase64: '' });
+        } catch (e: any) {
+            showNotification?.('Error submitting payment', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            {showUpload && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-800">Record New Payment</h3>
+                            <button onClick={() => setShowUpload(false)}><X size={20}/></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Payment Type</label>
+                                    <select className="w-full p-2 border rounded-lg bg-white text-sm" value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                                        <option>Tuition Fee</option>
+                                        <option>Exam Fee</option>
+                                        <option>Uniform Fee</option>
+                                        <option>Books/Materials</option>
+                                        <option>Other</option>
+                                    </select>
+                                </div>
+                                <Input label="Amount" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="0.00" type="number" className="mb-0" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input label="Term" value={formData.term} onChange={e => setFormData({...formData, term: e.target.value})} className="mb-0"/>
+                                <Input label="Session" value={formData.session} onChange={e => setFormData({...formData, session: e.target.value})} className="mb-0"/>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Upload Receipt Image</label>
+                                <div 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
+                                >
+                                    {formData.receiptBase64 ? (
+                                        <div className="text-center">
+                                            <img src={formData.receiptBase64} className="h-24 mx-auto mb-2 object-contain" alt="Receipt"/>
+                                            <span className="text-xs text-green-600 font-bold">Image Selected</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <Upload size={24} className="text-gray-400 mb-2"/>
+                                            <span className="text-sm text-gray-500">Click to upload image</span>
+                                        </>
+                                    )}
+                                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileUpload}/>
+                                </div>
+                            </div>
+
+                            <Button onClick={handleSubmit} disabled={loading} className="w-full">{loading ? 'Submitting...' : 'Submit Payment Record'}</Button>
+                        </div>
+                    </Card>
                 </div>
-                <span className="font-bold text-gray-800">$500.00</span>
+            )}
+
+            <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold text-gray-800">Fee Payment History</h2>
+                <Button onClick={() => setShowUpload(true)}><Plus size={16}/> Record Payment</Button>
             </div>
-             <div className="flex justify-between items-center p-3 border-b border-gray-100 pb-4">
-                <div className="flex items-center gap-3">
-                    <div className="bg-green-100 p-2 rounded-full"><CheckCircle className="text-green-600 w-4 h-4"/></div>
-                    <div>
-                        <p className="font-bold text-gray-800">Library Fee</p>
-                        <p className="text-xs text-gray-500">Nov 15, 2024</p>
-                    </div>
+
+            <Card className="p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-gray-50 text-gray-600 border-b">
+                            <tr>
+                                <th className="p-4">Date</th>
+                                <th className="p-4">Type</th>
+                                <th className="p-4">Amount</th>
+                                <th className="p-4">Term</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4">Receipt</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                            {payments.map(p => (
+                                <tr key={p.id} className="hover:bg-gray-50">
+                                    <td className="p-4 text-gray-500">{p.createdAt?.toDate?.().toLocaleDateString()}</td>
+                                    <td className="p-4 font-medium text-gray-800">{p.paymentType}</td>
+                                    <td className="p-4 font-bold text-gray-800">{p.amount}</td>
+                                    <td className="p-4 text-gray-600">{p.term}</td>
+                                    <td className="p-4">
+                                        <Badge color={p.status === 'approved' ? 'green' : p.status === 'rejected' ? 'red' : 'yellow'}>
+                                            {p.status.toUpperCase()}
+                                        </Badge>
+                                    </td>
+                                    <td className="p-4">
+                                        {p.receiptBase64 && (
+                                            <a href={p.receiptBase64} download={`Receipt_${p.id}.png`} className="text-indigo-600 hover:underline text-xs flex items-center gap-1">
+                                                <FileText size={12}/> View
+                                            </a>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                            {payments.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-400">No payment records found.</td></tr>}
+                        </tbody>
+                    </table>
                 </div>
-                <span className="font-bold text-gray-800">$25.00</span>
-            </div>
+            </Card>
         </div>
-    </Card>
-);
+    );
+};
