@@ -167,33 +167,46 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode, role, setMode, onBack,
         // Check if input looks like an email
         const isEmail = emailToSend.includes('@');
         
-        // If it's not an email, try to resolve ID to email from Firestore
-        if (!isEmail) {
+        if (isEmail) {
+            // Lowercase email for consistency with Auth
+            emailToSend = emailToSend.toLowerCase();
+        } else {
+             // If it's not an email, try to resolve ID to email from Firestore
              const usersRef = collection(db, 'users');
              const q = query(usersRef, where('uniqueId', '==', emailToSend.toUpperCase()), where('role', '==', role));
              const snap = await getDocs(q);
              
              if (snap.empty) {
-                 throw new Error(`No ${role} found with that ID.`);
+                 throw new Error(`No ${role} account found with ID: ${emailToSend.toUpperCase()}`);
              }
              const userData = snap.docs[0].data();
              if (!userData.email || userData.email.endsWith('@temp-parent.com')) {
                  // Handle students who might not have a real email (simulated email for parents)
                  if (role === 'student') {
-                    throw new Error("Student accounts are linked to Parent Phone numbers. Please contact School Admin to reset.");
+                    throw new Error("Student accounts use Parent Phone numbers and do not have emails. Please contact your School Admin to reset your password.");
                  }
                  throw new Error("This account does not have a linked email address. Please contact Admin.");
              }
              emailToSend = userData.email;
         }
 
-        await sendPasswordResetEmail(auth, emailToSend);
-        showNotification(`Password reset link sent to ${emailToSend}`, "success");
+        // Include ActionCodeSettings to ensure proper redirection
+        const actionCodeSettings = {
+            url: window.location.origin, // Redirects back to the app home page
+            handleCodeInApp: false
+        };
+
+        await sendPasswordResetEmail(auth, emailToSend, actionCodeSettings);
+        showNotification(`Password reset link sent to ${emailToSend}. Please check your inbox and spam folder.`, "success");
         setShowForgotPassword(false);
         setResetInput('');
     } catch (err: any) {
         console.error(err);
-        showNotification(err.message, "error");
+        if (err.code === 'auth/user-not-found') {
+            showNotification("No registered user found with this email.", "error");
+        } else {
+            showNotification(err.message, "error");
+        }
     } finally {
         setLoading(false);
     }
