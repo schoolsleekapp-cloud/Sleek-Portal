@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap, MessageCircle, CreditCard, X } from 'lucide-react';
-import { collection, query, where, onSnapshot, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Users, Edit, Settings, Calendar, Download, FileText, CheckCircle, XCircle, AlertTriangle, Eye, Printer, Filter, GraduationCap, MessageCircle, CreditCard, X, Megaphone, Send, Search } from 'lucide-react';
+import { collection, query, where, onSnapshot, limit, doc, updateDoc, getDoc, orderBy, addDoc, serverTimestamp, or } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { UserProfile, SchoolInfo, AttendanceRecord, Exam, Result, FeePayment } from '../../types';
+import { UserProfile, SchoolInfo, AttendanceRecord, Exam, Result, FeePayment, Announcement, ChatMessage } from '../../types';
 import { Card } from '../Card';
 import { StatCard } from '../StatCard';
 import { Badge } from '../Badge';
@@ -32,9 +33,55 @@ const sendWhatsapp = (phone: string | null | undefined, text: string) => {
 };
 
 export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInfo }) => {
+    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+    useEffect(() => {
+        const fetchAnnouncements = async () => {
+            try {
+                // Fetch recent announcements for admin
+                // Removed orderBy/limit to avoid composite index requirement
+                const q = query(
+                    collection(db, 'announcements'), 
+                    where('target', 'array-contains', 'admin')
+                );
+                // Use onSnapshot for real-time updates on dashboard
+                const unsub = onSnapshot(q, (snap) => {
+                     const data = snap.docs.map(d => ({id: d.id, ...d.data()} as Announcement));
+                     
+                     // Sort client-side
+                     data.sort((a, b) => {
+                        const tA = a.createdAt?.seconds || 0;
+                        const tB = b.createdAt?.seconds || 0;
+                        return tB - tA;
+                     });
+                     
+                     setAnnouncements(data.slice(0, 3));
+                });
+                return () => unsub();
+            } catch (e) {
+                console.error("Error fetching announcements", e);
+            }
+        };
+        fetchAnnouncements();
+    }, []);
+
     if (view === 'home' && setView) {
         return (
              <div className="space-y-6">
+                {announcements.length > 0 && (
+                    <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg">
+                        <h3 className="font-bold flex items-center gap-2 mb-3"><Megaphone size={18}/> Global Announcements</h3>
+                        <div className="space-y-2">
+                            {announcements.map(ann => (
+                                <div key={ann.id} className="bg-white/10 p-3 rounded-lg text-sm border border-white/10">
+                                    <p>{ann.message}</p>
+                                    <p className="text-xs opacity-60 mt-1">{ann.createdAt?.toDate?.().toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-gradient-to-r from-indigo-600 to-indigo-800 text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Users size={120} />
@@ -54,7 +101,7 @@ export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInf
                 </div>
                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <StatCard icon={Users} label="User Management" value="Directory" color="blue" onClick={() => setView('users')} />
-                    <StatCard icon={CreditCard} label="Fee Payments" value="Review" color="emerald" onClick={() => setView('fees')} />
+                    <StatCard icon={MessageCircle} label="Messages" value="Open Chat" color="orange" onClick={() => setView('messages')} />
                     <StatCard icon={GraduationCap} label="Results Management" value="Student Results" color="green" onClick={() => setView('admin_results')} />
                     <StatCard icon={Calendar} label="Attendance Logs" value="View All" color="purple" onClick={() => setView('attendance')} />
                 </div>
@@ -62,6 +109,177 @@ export const AdminDashboard: React.FC<Props> = ({ user, view, setView, schoolInf
         );
     }
     return null;
+};
+
+// --- CHAT MODULE ---
+export const AdminChat: React.FC<Props> = ({ user }) => {
+    const [users, setUsers] = useState<UserProfile[]>([]);
+    const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [search, setSearch] = useState('');
+    const chatEndRef = useRef<HTMLDivElement>(null);
+
+    // Fetch potential chat users (Teachers & Students)
+    useEffect(() => {
+        const q = query(
+            collection(db, 'users'), 
+            where('schoolId', '==', user.schoolId),
+            where('role', 'in', ['teacher', 'student']) 
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            setUsers(snap.docs.map(d => ({id: d.id, ...d.data()} as UserProfile)));
+        });
+        return () => unsub();
+    }, [user.schoolId]);
+
+    // Fetch Messages when a user is selected
+    useEffect(() => {
+        if (!selectedUser) return;
+        
+        // Complex Query: (sender=Me AND receiver=Them) OR (sender=Them AND receiver=Me)
+        // Firestore OR queries are limited, so we usually just query all messages involving 'Me' and filter client side
+        // OR better: Create a composite ID for conversation? 'adminID_userID'
+        // For simplicity: Query where I am sender or receiver, then filter.
+        
+        const q = query(
+             collection(db, 'messages'),
+             or(
+                 where('senderId', '==', user.uniqueId),
+                 where('receiverId', '==', user.uniqueId)
+             ),
+             orderBy('timestamp', 'asc')
+        );
+
+        const unsub = onSnapshot(q, (snap) => {
+            const allMsgs = snap.docs.map(d => ({id: d.id, ...d.data()} as ChatMessage));
+            // Filter strictly for this conversation
+            const convo = allMsgs.filter(m => 
+                (m.senderId === user.uniqueId && m.receiverId === selectedUser.uniqueId) ||
+                (m.senderId === selectedUser.uniqueId && m.receiverId === user.uniqueId)
+            );
+            setMessages(convo);
+            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        });
+
+        return () => unsub();
+    }, [selectedUser, user.uniqueId]);
+
+    const sendMessage = async () => {
+        if (!selectedUser || !newMessage.trim()) return;
+        try {
+            await addDoc(collection(db, 'messages'), {
+                senderId: user.uniqueId,
+                senderName: user.fullName,
+                receiverId: selectedUser.uniqueId,
+                receiverName: selectedUser.fullName, // store just in case
+                text: newMessage,
+                timestamp: serverTimestamp(),
+                read: false
+            });
+            setNewMessage('');
+        } catch (e) {
+            console.error("Send failed", e);
+        }
+    };
+
+    const filteredUsers = users.filter(u => u.fullName.toLowerCase().includes(search.toLowerCase()) || u.uniqueId.includes(search));
+
+    return (
+        <div className="flex h-[calc(100vh-140px)] bg-white rounded-xl shadow-sm border overflow-hidden">
+            {/* User List */}
+            <div className={`${selectedUser ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-col border-r bg-gray-50`}>
+                <div className="p-4 border-b bg-white">
+                    <h3 className="font-bold text-gray-800 mb-3">Chats</h3>
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4"/>
+                        <input 
+                            className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg" 
+                            placeholder="Search..." 
+                            value={search}
+                            onChange={e => setSearch(e.target.value)}
+                        />
+                    </div>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    {filteredUsers.map(u => (
+                        <div 
+                            key={u.id} 
+                            onClick={() => setSelectedUser(u)}
+                            className={`p-4 border-b cursor-pointer hover:bg-white transition-colors flex items-center gap-3 ${selectedUser?.id === u.id ? 'bg-white border-l-4 border-l-indigo-600' : ''}`}
+                        >
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${u.role === 'teacher' ? 'bg-purple-500' : 'bg-blue-500'}`}>
+                                {u.fullName.charAt(0)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 truncate">{u.fullName}</p>
+                                <p className="text-xs text-gray-500">{u.role} • {u.uniqueId}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Chat Area */}
+            <div className={`${!selectedUser ? 'hidden md:flex' : 'flex'} flex-1 flex-col bg-slate-50 relative`}>
+                {!selectedUser ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center">
+                        <MessageCircle size={48} className="mb-4 opacity-50"/>
+                        <p>Select a teacher or student to start chatting.</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="p-4 border-b bg-white flex items-center gap-3 shadow-sm z-10">
+                            <button onClick={() => setSelectedUser(null)} className="md:hidden p-1 hover:bg-gray-100 rounded">
+                                <X size={20}/>
+                            </button>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${selectedUser.role === 'teacher' ? 'bg-purple-500' : 'bg-blue-500'}`}>
+                                {selectedUser.fullName.charAt(0)}
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800">{selectedUser.fullName}</h3>
+                                <p className="text-xs text-gray-500">{selectedUser.role}</p>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                            {messages.map(msg => {
+                                const isMe = msg.senderId === user.uniqueId;
+                                return (
+                                    <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-[75%] p-3 rounded-2xl text-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white text-gray-800 shadow-sm rounded-bl-none'}`}>
+                                            <p>{msg.text}</p>
+                                            <p className={`text-[10px] mt-1 text-right ${isMe ? 'text-indigo-200' : 'text-gray-400'}`}>
+                                                {msg.timestamp?.toDate ? msg.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            <div ref={chatEndRef} />
+                        </div>
+
+                        <div className="p-4 bg-white border-t flex gap-2">
+                            <input 
+                                className="flex-1 border rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Type a message..."
+                                value={newMessage}
+                                onChange={e => setNewMessage(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                            />
+                            <button 
+                                onClick={sendMessage}
+                                disabled={!newMessage.trim()}
+                                className="bg-indigo-600 text-white p-2 rounded-full hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                            >
+                                <Send size={20}/>
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
 };
 
 export const AdminFees: React.FC<Props> = ({ user, showNotification }) => {

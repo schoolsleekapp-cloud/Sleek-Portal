@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import { School, Users, GraduationCap, LayoutDashboard, Building2, Key, Plus, CheckCircle, XCircle, Printer, Ticket, Download, Loader, RefreshCw, Square, CheckSquare, Search, Filter, ArrowUpDown, Trash2 } from 'lucide-react';
+import { School, Users, GraduationCap, LayoutDashboard, Building2, Key, Plus, CheckCircle, XCircle, Printer, Ticket, Download, Loader, RefreshCw, Square, CheckSquare, Search, Filter, ArrowUpDown, Trash2, Megaphone, Send } from 'lucide-react';
 import { collection, query, getDocs, where, addDoc, serverTimestamp, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { UserProfile, SchoolInfo, AccessCode, ResultToken } from '../../types';
+import { UserProfile, SchoolInfo, AccessCode, ResultToken, Announcement } from '../../types';
 import { Card } from '../Card';
 import { SearchFilterBar } from '../SearchFilterBar';
 import { Badge } from '../Badge';
@@ -63,7 +64,7 @@ const TokenCard: React.FC<{ token: ResultToken }> = ({ token }) => {
 };
 
 export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNotification }) => {
-    const [activeTab, setActiveTab] = useState<'overview' | 'schools' | 'teachers' | 'students' | 'codes' | 'result_tokens'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'schools' | 'teachers' | 'students' | 'codes' | 'result_tokens' | 'announcements'>('overview');
     const [schools, setSchools] = useState<SchoolInfo[]>([]);
     const [teachers, setTeachers] = useState<UserProfile[]>([]);
     const [students, setStudents] = useState<UserProfile[]>([]);
@@ -79,6 +80,10 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
     // Print/Download States
     const [tokensToPrint, setTokensToPrint] = useState<ResultToken[]>([]);
     const [printBatchId, setPrintBatchId] = useState<string>('');
+
+    // Announcement States
+    const [announcementMsg, setAnnouncementMsg] = useState('');
+    const [targetAudience, setTargetAudience] = useState<string[]>(['admin', 'teacher', 'student']);
 
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
@@ -280,6 +285,25 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
         }
     };
 
+    const handleAnnouncement = async () => {
+        if (!announcementMsg.trim()) return;
+        setGenerating(true);
+        try {
+            await addDoc(collection(db, 'announcements'), {
+                message: announcementMsg,
+                target: targetAudience,
+                author: 'SuperAdmin',
+                createdAt: serverTimestamp()
+            });
+            showNotification?.('Announcement Published Successfully!', 'success');
+            setAnnouncementMsg('');
+        } catch (e: any) {
+             showNotification?.('Failed to publish', 'error');
+        } finally {
+            setGenerating(false);
+        }
+    };
+
     const downloadPDF = (elementId: string, filename: string) => {
         const element = document.getElementById(elementId);
         if (!element) return;
@@ -377,6 +401,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
             {/* Navigation Tabs */}
             <div className="flex flex-wrap gap-2 pb-2 overflow-x-auto">
                 <TabButton id="overview" label="Overview" icon={LayoutDashboard} />
+                <TabButton id="announcements" label="Announcements" icon={Megaphone} />
                 <TabButton id="codes" label="Access Codes" icon={Key} />
                 <TabButton id="result_tokens" label="Result Tokens" icon={Ticket} />
                 <TabButton id="schools" label="All Schools" icon={Building2} />
@@ -425,6 +450,54 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
                             </div>
                         </div>
                     </div>
+                )}
+
+                {activeTab === 'announcements' && (
+                    <Card>
+                        <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2"><Megaphone size={20}/> Publish Announcement</h2>
+                        <div className="space-y-4 max-w-2xl">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                                <textarea 
+                                    className="w-full border rounded-lg p-3 h-32 focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Type your announcement here..."
+                                    value={announcementMsg}
+                                    onChange={e => setAnnouncementMsg(e.target.value)}
+                                ></textarea>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Target Audience</label>
+                                <div className="flex gap-4">
+                                    {['admin', 'teacher', 'student'].map(role => (
+                                        <label key={role} className="flex items-center gap-2 cursor-pointer border p-2 rounded hover:bg-gray-50">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={targetAudience.includes(role)}
+                                                onChange={() => {
+                                                    if (targetAudience.includes(role)) {
+                                                        setTargetAudience(targetAudience.filter(r => r !== role));
+                                                    } else {
+                                                        setTargetAudience([...targetAudience, role]);
+                                                    }
+                                                }}
+                                                className="w-4 h-4 text-indigo-600 rounded"
+                                            />
+                                            <span className="capitalize">{role}s</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <Button 
+                                onClick={handleAnnouncement} 
+                                disabled={generating || !announcementMsg.trim() || targetAudience.length === 0}
+                                className="w-full"
+                            >
+                                {generating ? 'Publishing...' : 'Publish Announcement'}
+                            </Button>
+                        </div>
+                    </Card>
                 )}
 
                 {activeTab === 'result_tokens' && (
@@ -683,6 +756,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
                                         <th className="p-4 font-medium">Unique ID</th>
                                         <th className="p-4 font-medium">Email</th>
                                         <th className="p-4 font-medium">School ID</th>
+                                        <th className="p-4 font-medium">Points</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -697,6 +771,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
                                             <td className="p-4 font-mono text-sm text-gray-600">{teacher.uniqueId}</td>
                                             <td className="p-4 text-gray-600">{teacher.email}</td>
                                             <td className="p-4"><Badge color="gray">{teacher.schoolId}</Badge></td>
+                                            <td className="p-4"><Badge color="orange">{teacher.points || 0}</Badge></td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -738,6 +813,10 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ showNo
                                         <div className="flex justify-between">
                                             <span>Parent:</span>
                                             <span className="font-medium">{student.parentPhone}</span>
+                                        </div>
+                                        <div className="flex justify-between border-t pt-1 mt-1">
+                                            <span className="text-orange-600 font-bold">Points:</span>
+                                            <span className="font-bold bg-orange-100 text-orange-700 px-2 rounded-full text-xs">{student.points || 0}</span>
                                         </div>
                                     </div>
                                 </div>

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Search, Filter } from 'lucide-react';
 
@@ -7,6 +8,7 @@ interface SearchFilterBarProps {
   filterOptions?: { label: string; value: string }[];
   placeholder?: string;
   className?: string;
+  value?: string;
 }
 
 export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
@@ -14,7 +16,8 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
   onFilterChange,
   filterOptions = [],
   placeholder = "Search...",
-  className = ""
+  className = "",
+  value
 }) => {
   return (
     <div className={`flex flex-col sm:flex-row gap-3 mb-6 ${className}`}>
@@ -23,6 +26,7 @@ export const SearchFilterBar: React.FC<SearchFilterBarProps> = ({
         <input
           type="text"
           placeholder={placeholder}
+          value={value}
           onChange={(e) => onSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shadow-sm transition-all"
         />

@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, GraduationCap, Calendar, CreditCard, CheckCircle, Lock, User, Clock, AlertCircle, BookOpen, Search, ArrowLeft, Unlock, Loader, PlayCircle, History, List, Plus, X, Upload } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, getDoc, orderBy, limit } from 'firebase/firestore';
+import { FileText, GraduationCap, Calendar, CreditCard, CheckCircle, Lock, User, Clock, AlertCircle, BookOpen, Search, ArrowLeft, Unlock, Loader, PlayCircle, History, List, Plus, X, Upload, Megaphone } from 'lucide-react';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, getDoc, orderBy, limit, increment } from 'firebase/firestore';
 import { db } from '../../services/firebase';
-import { UserProfile, Exam, AttendanceRecord, Result, LessonNote, ResultToken, SchoolInfo, ExamSubmission, FeePayment } from '../../types';
+import { UserProfile, Exam, AttendanceRecord, Result, LessonNote, ResultToken, SchoolInfo, ExamSubmission, FeePayment, Announcement } from '../../types';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { StatCard } from '../StatCard';
@@ -18,9 +19,52 @@ interface Props {
 }
 
 export const StudentDashboard: React.FC<Props> = ({ user, view, setView }) => {
+    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+    useEffect(() => {
+        const fetchAnnouncements = async () => {
+            try {
+                // Fetch recent announcements for students
+                // Note: Removed orderBy/limit to avoid requiring a composite index in Firestore
+                const q = query(
+                    collection(db, 'announcements'), 
+                    where('target', 'array-contains', 'student')
+                );
+                const snap = await getDocs(q);
+                const data = snap.docs.map(d => ({id: d.id, ...d.data()} as Announcement));
+                
+                // Sort client-side
+                data.sort((a, b) => {
+                    const tA = a.createdAt?.seconds || 0;
+                    const tB = b.createdAt?.seconds || 0;
+                    return tB - tA;
+                });
+                
+                setAnnouncements(data.slice(0, 3));
+            } catch (e) {
+                console.error("Error fetching announcements", e);
+            }
+        };
+        fetchAnnouncements();
+    }, []);
+
     if (view === 'home' && setView) {
         return (
             <div className="space-y-6">
+                 {announcements.length > 0 && (
+                    <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg">
+                        <h3 className="font-bold flex items-center gap-2 mb-3"><Megaphone size={18}/> Admin Announcements</h3>
+                        <div className="space-y-2">
+                            {announcements.map(ann => (
+                                <div key={ann.id} className="bg-white/10 p-3 rounded-lg text-sm border border-white/10">
+                                    <p>{ann.message}</p>
+                                    <p className="text-xs opacity-60 mt-1">{ann.createdAt?.toDate?.().toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <h2 className="text-2xl font-bold text-gray-800">Student Dashboard</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard icon={FileText} label="Active Exams" value="Start Now" color="blue" onClick={() => setView('cbt')} />
@@ -240,6 +284,20 @@ export const StudentCBT: React.FC<Props> = ({ user, showNotification }) => {
                 schoolId: user.schoolId,
                 timestamp: serverTimestamp()
             });
+
+            // --- TEACHER POINTS LOGIC ---
+            // Find the teacher who created the exam and give them 2 points
+            if (currentExamData.creatorId) {
+                const teacherQ = query(collection(db, 'users'), where('uniqueId', '==', currentExamData.creatorId));
+                const teacherSnap = await getDocs(teacherQ);
+                if (!teacherSnap.empty) {
+                    const teacherDoc = teacherSnap.docs[0];
+                    await updateDoc(doc(db, 'users', teacherDoc.id), {
+                        points: increment(2)
+                    });
+                }
+            }
+
             setSubmitted(true);
             setActiveExam(false);
         } catch (e: any) {

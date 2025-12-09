@@ -16,7 +16,26 @@ export interface UserProfile {
   schoolId: string;
   uniqueId: string;
   photoBase64?: string | null;
+  points?: number; // Accumulated achievement points
   createdAt: FirestoreTimestamp | any;
+}
+
+export interface Announcement {
+  id: string;
+  message: string;
+  target: ('admin' | 'teacher' | 'student')[];
+  author: string;
+  createdAt: FirestoreTimestamp | any;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string; // Could be a specific user ID
+  text: string;
+  timestamp: FirestoreTimestamp | any;
+  read: boolean;
 }
 
 export interface SchoolInfo {

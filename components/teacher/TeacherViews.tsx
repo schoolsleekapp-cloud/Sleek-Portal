@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, Edit, Calendar, IdCard, Plus, Clock, User, LogIn, LogOut, Camera, X, CheckCircle, Keyboard, Download, Sparkles, Image as ImageIcon, PenTool, Type, Trash2, Printer, ChevronDown, Save, Eye, Settings, Search, Loader, Palette, List, ArrowLeft, School, Activity, BookOpen, Share2, Upload, FileUp, Filter, RefreshCw, Smartphone, Trash, WifiOff, CloudOff, AlertCircle, MessageCircle, ChevronRight, Calculator, UserCheck } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, limit, updateDoc, doc, getDoc, deleteDoc, orderBy } from 'firebase/firestore';
+import { FileText, Edit, Calendar, IdCard, Plus, Clock, User, LogIn, LogOut, Camera, X, CheckCircle, Keyboard, Download, Sparkles, Image as ImageIcon, PenTool, Type, Trash2, Printer, ChevronDown, Save, Eye, Settings, Search, Loader, Palette, List, ArrowLeft, School, Activity, BookOpen, Share2, Upload, FileUp, Filter, RefreshCw, Smartphone, Trash, WifiOff, CloudOff, AlertCircle, MessageCircle, ChevronRight, Calculator, UserCheck, Megaphone } from 'lucide-react';
+import { collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, limit, updateDoc, doc, getDoc, deleteDoc, orderBy, increment } from 'firebase/firestore';
 import { GoogleGenAI } from "@google/genai";
 import { db } from '../../services/firebase';
-import { UserProfile, Exam, Question, AttendanceRecord, SchoolInfo, Result, LessonNote, ExamSubmission } from '../../types';
+import { UserProfile, Exam, Question, AttendanceRecord, SchoolInfo, Result, LessonNote, ExamSubmission, Announcement } from '../../types';
 import { Button } from '../Button';
 import { Card } from '../Card';
 import { StatCard } from '../StatCard';
@@ -332,10 +333,170 @@ export const ResultPreviewModal = ({ data, schoolInfo, studentPhoto, parentPhone
     );
 };
 
+export const TeacherAttendance: React.FC<Props> = ({ user, showNotification }) => {
+    const [students, setStudents] = useState<UserProfile[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
+    const [showScanner, setShowScanner] = useState(false);
+
+    useEffect(() => {
+        const q = query(collection(db, 'users'), where('schoolId', '==', user.schoolId), where('role', '==', 'student'));
+        const unsub = onSnapshot(q, (snap) => {
+            setStudents(snap.docs.map(d => ({id: d.id, ...d.data()} as UserProfile)));
+        });
+        return () => unsub();
+    }, [user.schoolId]);
+
+    const handleMark = async (student: UserProfile, type: 'in' | 'out') => {
+        setLoadingMap(prev => ({...prev, [student.id]: true}));
+        try {
+            await addDoc(collection(db, 'attendance'), {
+                studentId: student.uniqueId,
+                studentName: student.fullName,
+                schoolId: user.schoolId,
+                type,
+                timestamp: serverTimestamp(),
+                recordedBy: user.uniqueId,
+                recordedByName: user.fullName,
+                guardianName: null, // Could be filled if we had more info
+                guardianPhone: student.parentPhone
+            });
+            showNotification?.(`Marked ${student.fullName} ${type === 'in' ? 'Present' : 'Signed Out'}`, 'success');
+        } catch (e: any) {
+            console.error(e);
+            showNotification?.('Failed to mark attendance', 'error');
+        } finally {
+            setLoadingMap(prev => ({...prev, [student.id]: false}));
+        }
+    };
+
+    const handleScan = (data: string) => {
+        setShowScanner(false);
+        setSearchTerm(data);
+        showNotification?.('Student ID Scanned', 'success');
+    };
+
+    const filteredStudents = students.filter(s => 
+        s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        s.uniqueId.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+        <Card>
+            {showScanner && <QRScanner onScan={handleScan} onClose={() => setShowScanner(false)} />}
+            
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-gray-800">Class Attendance Register</h2>
+                <Badge color="blue">{filteredStudents.length} Students</Badge>
+            </div>
+            
+            <div className="flex gap-3 mb-6">
+                <div className="flex-1">
+                    <SearchFilterBar 
+                        onSearch={setSearchTerm} 
+                        value={searchTerm}
+                        placeholder="Search student name or ID..." 
+                        className="mb-0"
+                    />
+                </div>
+                <Button 
+                    onClick={() => setShowScanner(true)} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-[46px] w-[46px] p-0 flex items-center justify-center rounded-xl shadow-sm"
+                    title="Scan Student ID"
+                >
+                    <Camera size={20}/>
+                </Button>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-gray-100">
+                <table className="w-full text-left text-sm">
+                    <thead className="bg-gray-50 text-gray-500">
+                        <tr>
+                            <th className="p-4">Student</th>
+                            <th className="p-4">ID</th>
+                            <th className="p-4 text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {filteredStudents.map(s => (
+                            <tr key={s.id} className="hover:bg-gray-50">
+                                <td className="p-4 font-bold text-gray-800">{s.fullName}</td>
+                                <td className="p-4 text-gray-500 font-mono">{s.uniqueId}</td>
+                                <td className="p-4 flex justify-center gap-3">
+                                    <Button 
+                                        onClick={() => handleMark(s, 'in')} 
+                                        variant="success" 
+                                        className="py-1 px-4 text-xs"
+                                        disabled={loadingMap[s.id]}
+                                    >
+                                        Mark Present
+                                    </Button>
+                                    <Button 
+                                        onClick={() => handleMark(s, 'out')} 
+                                        variant="danger" 
+                                        className="py-1 px-4 text-xs"
+                                        disabled={loadingMap[s.id]}
+                                    >
+                                        Clock Out
+                                    </Button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {filteredStudents.length === 0 && <div className="p-8 text-center text-gray-400">No students found.</div>}
+            </div>
+        </Card>
+    );
+};
+
 export const TeacherDashboard: React.FC<Props> = ({ user, view, setView }) => {
+    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+    useEffect(() => {
+        const fetchAnnouncements = async () => {
+            try {
+                // Fetch recent announcements for teachers
+                // Removed orderBy/limit to avoid composite index error
+                const q = query(
+                    collection(db, 'announcements'), 
+                    where('target', 'array-contains', 'teacher')
+                );
+                const snap = await getDocs(q);
+                const data = snap.docs.map(d => ({id: d.id, ...d.data()} as Announcement));
+                
+                // Sort client side
+                data.sort((a, b) => {
+                    const tA = a.createdAt?.seconds || 0;
+                    const tB = b.createdAt?.seconds || 0;
+                    return tB - tA;
+                });
+                
+                setAnnouncements(data.slice(0, 3));
+            } catch (e) {
+                console.error("Error fetching announcements", e);
+            }
+        };
+        fetchAnnouncements();
+    }, []);
+
     if (view === 'home' && setView) {
         return (
             <div className="space-y-6">
+                {announcements.length > 0 && (
+                    <div className="bg-indigo-600 text-white p-4 rounded-xl shadow-lg">
+                        <h3 className="font-bold flex items-center gap-2 mb-3"><Megaphone size={18}/> Admin Announcements</h3>
+                        <div className="space-y-2">
+                            {announcements.map(ann => (
+                                <div key={ann.id} className="bg-white/10 p-3 rounded-lg text-sm border border-white/10">
+                                    <p>{ann.message}</p>
+                                    <p className="text-xs opacity-60 mt-1">{ann.createdAt?.toDate?.().toLocaleString()}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                
                 <h2 className="text-2xl font-bold text-gray-800">Teacher Dashboard</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <StatCard icon={FileText} label="Manage Exams" value="Create / Edit" color="blue" onClick={() => setView('exams')} />
@@ -362,6 +523,7 @@ export const TeacherDashboard: React.FC<Props> = ({ user, view, setView }) => {
     return null;
 };
 
+// ... Rest of the file unchanged (TeacherExams, TeacherCBTResults, TeacherGrading, TeacherLessonNotes) ...
 export const TeacherExams: React.FC<Props> = ({ user, showNotification }) => {
     const [exams, setExams] = useState<Exam[]>([]);
     const [mode, setMode] = useState<'list' | 'editor' | 'preview' | 'print'>('list');
@@ -855,6 +1017,27 @@ export const TeacherGrading: React.FC<Props> = ({ user, showNotification }) => {
         setLoading(true);
         try {
             await addDoc(collection(db, 'results'), resultData);
+
+            // --- STUDENT POINTS LOGIC ---
+            // 1st = 10pts, 2nd = 9pts ... 6th = 5pts
+            const posMatch = position.match(/(\d+)/);
+            if (posMatch && studentProfile?.id) {
+                const rank = parseInt(posMatch[0]);
+                let pointsToAdd = 0;
+                if (rank === 1) pointsToAdd = 10;
+                else if (rank === 2) pointsToAdd = 9;
+                else if (rank === 3) pointsToAdd = 8;
+                else if (rank === 4) pointsToAdd = 7;
+                else if (rank === 5) pointsToAdd = 6;
+                else if (rank === 6) pointsToAdd = 5;
+
+                if (pointsToAdd > 0) {
+                    await updateDoc(doc(db, 'users', studentProfile.id), {
+                        points: increment(pointsToAdd)
+                    });
+                }
+            }
+
             showNotification?.("Result compiled and saved successfully!", "success");
             
             // Reset crucial fields
@@ -1256,81 +1439,6 @@ export const TeacherGrading: React.FC<Props> = ({ user, showNotification }) => {
                 </div>
             )}
         </div>
-    );
-};
-
-export const TeacherAttendance: React.FC<Props> = ({ user, showNotification }) => {
-    const [students, setStudents] = useState<UserProfile[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [searchTerm, setSearchTerm] = useState('');
-
-    useEffect(() => {
-        const fetchStudents = async () => {
-             const q = query(collection(db, 'users'), where('schoolId', '==', user.schoolId), where('role', '==', 'student'));
-             const snap = await getDocs(q);
-             setStudents(snap.docs.map(d => ({id: d.id, ...d.data()} as UserProfile)));
-        };
-        fetchStudents();
-    }, [user.schoolId]);
-
-    const mark = async (student: UserProfile, type: 'in' | 'out') => {
-        setLoading(true);
-        try {
-            await addDoc(collection(db, 'attendance'), {
-                studentId: student.uniqueId,
-                studentName: student.fullName,
-                schoolId: user.schoolId,
-                type,
-                timestamp: serverTimestamp(),
-                recordedBy: user.uniqueId,
-                recordedByName: user.fullName,
-                guardianName: null, 
-                guardianPhone: student.parentPhone
-            });
-            showNotification?.(`Marked ${student.fullName} ${type === 'in' ? 'Present' : 'Out'}`, 'success');
-        } catch (e) {
-            console.error(e);
-            showNotification?.('Failed to mark attendance', 'error');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const filtered = students.filter(s => s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || s.uniqueId.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    return (
-        <Card>
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-bold text-gray-800">Class Attendance Register</h2>
-                <Badge color="blue">{filtered.length} Students</Badge>
-            </div>
-            <SearchFilterBar onSearch={setSearchTerm} placeholder="Search student..." />
-            
-            <div className="grid gap-3">
-                {filtered.map(student => (
-                    <div key={student.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
-                                {student.fullName.charAt(0)}
-                            </div>
-                            <div>
-                                <p className="font-bold text-gray-800">{student.fullName}</p>
-                                <p className="text-xs text-gray-500">{student.uniqueId}</p>
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                             <Button onClick={() => mark(student, 'in')} variant="success" className="bg-green-600 hover:bg-green-700 text-white" disabled={loading}>
-                                 <LogIn size={16} className="mr-1"/> IN
-                             </Button>
-                             <Button onClick={() => mark(student, 'out')} variant="danger" disabled={loading}>
-                                 <LogOut size={16} className="mr-1"/> OUT
-                             </Button>
-                        </div>
-                    </div>
-                ))}
-                {filtered.length === 0 && <p className="text-center text-gray-400 py-8">No students found.</p>}
-            </div>
-        </Card>
     );
 };
 

@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   School, LogOut, LayoutDashboard, IdCard, 
   FileText, GraduationCap, Calendar, CreditCard, 
-  Edit, Users, Menu, ChevronRight, QrCode, BookOpen, CheckCircle
+  Edit, Users, Menu, ChevronRight, QrCode, BookOpen, CheckCircle, MessageCircle
 } from 'lucide-react';
 import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -10,7 +11,7 @@ import { UserProfile, SchoolInfo } from '../types';
 import { UserIDCard } from './UserIDCard';
 import { StudentDashboard, StudentCBT, StudentResults, StudentAttendance, StudentFees, StudentLessonNotes } from './student/StudentViews';
 import { TeacherDashboard, TeacherExams, TeacherAttendance, TeacherGrading, TeacherLessonNotes, TeacherCBTResults } from './teacher/TeacherViews';
-import { AdminDashboard, AdminUsers, AdminAttendance, AdminExams, AdminResults, AdminFees } from './admin/AdminViews';
+import { AdminDashboard, AdminUsers, AdminAttendance, AdminExams, AdminResults, AdminFees, AdminChat } from './admin/AdminViews';
 import { SuperAdminDashboard } from './superadmin/SuperAdminViews';
 
 interface DashboardProps {
@@ -93,6 +94,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, showNotifi
             case 'cbt-results': return <TeacherCBTResults user={currentUser} showNotification={showNotification} />;
             case 'admin_results': return <AdminResults user={currentUser} showNotification={showNotification} />;
             case 'users': return <AdminUsers user={currentUser} />;
+            case 'messages': return <AdminChat user={currentUser} />;
             case 'settings': return <div className="p-8 bg-white rounded-xl shadow-sm">Settings panel (Placeholder)</div>;
             case 'schools': return <SuperAdminDashboard showNotification={showNotification} />;
             default: return <div>404: View Not Found</div>;
@@ -127,6 +129,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onLogout, showNotifi
                         <div className="space-y-1">
                             {schoolInfo && <p className="text-xs text-slate-500 truncate flex items-center gap-1"><School size={10}/> {schoolInfo.name}</p>}
                             <p className="text-xs text-slate-500 font-mono flex items-center gap-1"><IdCard size={10}/> {currentUser.uniqueId}</p>
+                            {(currentUser.points || 0) > 0 && (
+                                <p className="text-xs text-orange-600 font-bold flex items-center gap-1 bg-orange-50 w-fit px-1.5 rounded"><CheckCircle size={10}/> {currentUser.points} Pts</p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -202,6 +207,7 @@ const NavLinks = ({ role, current, setView }: { role: string, current: string, s
             { id: 'fees', icon: CreditCard, label: 'Fee Payments' },
             { id: 'attendance', icon: Calendar, label: 'Attendance Logs' },
             { id: 'users', icon: Users, label: 'Directory' },
+            { id: 'messages', icon: MessageCircle, label: 'Messages' },
             { id: 'settings', icon: Edit, label: 'Settings' },
         ],
         superadmin: [
