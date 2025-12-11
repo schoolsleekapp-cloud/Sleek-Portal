@@ -2,11 +2,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { initializeFirestore } from 'firebase/firestore';
 
-// Declare global variables injected by the environment (if used)
-declare const __app_id: string;
-
-export const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
 // Firebase configuration for 'sleek-school-portals'
 const firebaseConfig = {
   apiKey: "AIzaSyCXqYrkL_6Yb2N3lB9y_ZfzIBb5z9P8jgo",
