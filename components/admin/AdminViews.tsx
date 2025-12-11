@@ -138,17 +138,14 @@ export const AdminChat: React.FC<Props> = ({ user }) => {
         if (!selectedUser) return;
         
         // Complex Query: (sender=Me AND receiver=Them) OR (sender=Them AND receiver=Me)
-        // Firestore OR queries are limited, so we usually just query all messages involving 'Me' and filter client side
-        // OR better: Create a composite ID for conversation? 'adminID_userID'
-        // For simplicity: Query where I am sender or receiver, then filter.
+        // Removed orderBy('timestamp', 'asc') to fix index requirement error
         
         const q = query(
              collection(db, 'messages'),
              or(
                  where('senderId', '==', user.uniqueId),
                  where('receiverId', '==', user.uniqueId)
-             ),
-             orderBy('timestamp', 'asc')
+             )
         );
 
         const unsub = onSnapshot(q, (snap) => {
@@ -158,6 +155,14 @@ export const AdminChat: React.FC<Props> = ({ user }) => {
                 (m.senderId === user.uniqueId && m.receiverId === selectedUser.uniqueId) ||
                 (m.senderId === selectedUser.uniqueId && m.receiverId === user.uniqueId)
             );
+            
+            // Client-side Sort
+            convo.sort((a, b) => {
+                const tA = a.timestamp?.seconds || 0;
+                const tB = b.timestamp?.seconds || 0;
+                return tA - tB;
+            });
+
             setMessages(convo);
             setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         });
