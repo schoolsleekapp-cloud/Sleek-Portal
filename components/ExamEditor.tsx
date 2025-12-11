@@ -256,9 +256,11 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({ user, initialExam, onSav
         setIsGenerating(true);
 
         try {
-            const apiKey = process.env.API_KEY;
+            // Safely access API key, fallback to empty string if undefined (handled by check below)
+            const apiKey = process.env.API_KEY || '';
+            
             if (!apiKey) {
-                alert("API Key missing. Please configure your environment variables.");
+                alert("API Key missing. Please set VITE_API_KEY in your Vercel environment variables.");
                 setIsGenerating(false);
                 return;
             }
@@ -278,7 +280,8 @@ export const ExamEditor: React.FC<ExamEditorProps> = ({ user, initialExam, onSav
                 }
             });
 
-            const responseText = response.text();
+            const responseText = response.text;
+            if (!responseText) throw new Error("No response from AI");
             
             // Clean up if model still adds markdown
             const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
